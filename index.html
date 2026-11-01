@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>South Devon Wind</title>
+  <meta name="description" content="Live multi-model wind forecasts, tides and webcams for windsurfing and wingfoiling spots in South Devon.">
+  <meta name="theme-color" content="#0b5f7a">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌬️</text></svg>">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#" class="brand"><span aria-hidden="true">🌬️</span> South Devon Wind</a>
+    <div class="top-actions">
+      <span id="updated" class="muted small"></span>
+      <button id="refresh" class="btn ghost" title="Refresh forecasts">↻</button>
+      <a href="#settings" class="btn ghost" title="Settings">⚙︎</a>
+    </div>
+  </header>
+  <main id="main"></main>
+  <footer class="foot muted small">
+    Forecast data © <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0) · Tides: Open-Meteo / UKHO Admiralty ·
+    Webcams belong to their owners and may be offline. Not for navigation – always check conditions on the beach.
+  </footer>
+  <script src="spots.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

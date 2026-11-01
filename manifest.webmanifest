@@ -1,0 +1,9 @@
+{
+  "name": "South Devon Wind",
+  "short_name": "SD Wind",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f8fa",
+  "theme_color": "#0b5f7a",
+  "icons": []
+}
