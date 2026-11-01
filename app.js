@@ -304,7 +304,7 @@
     return { spot, hours, now: hours[nowIdx], nowIdx, tide, windows: { windsurf: windows('windsurf'), wing: windows('wing') } };
   }
 
-  // ---------- rendering ----------
+  // ---------- rendering helpers ----------
   const STATUS = {
     go: { txt: 'GO', cls: 'st-go' },
     maybe: { txt: 'Maybe', cls: 'st-maybe' },
@@ -314,56 +314,202 @@
     dark: { txt: 'Dark', cls: 'st-dark' },
     none: { txt: '–', cls: 'st-no' },
   };
-  const badge = (label, s) => `<span class="badge ${STATUS[s].cls}" title="${esc(label)}: ${STATUS[s].txt}">${esc(label)} <b>${STATUS[s].txt}</b></span>`;
+  const badge = (label, s) => `<span class="badge ${STATUS[s].cls}" title="${esc(label)}: ${STATUS[s].txt}">${label ? esc(label) + ' ' : ''}<b>${STATUS[s].txt}</b></span>`;
   const arrow = (dir, size = 22) => dir == null ? '' :
     `<svg class="arrow" width="${size}" height="${size}" viewBox="0 0 24 24" style="transform:rotate(${dir + 180}deg)" aria-label="wind from ${compass(dir)}"><path d="M12 2 L18 20 L12 16 L6 20 Z" fill="currentColor"/></svg>`;
   const speedClass = s => s == null ? 'w0' : s < 8 ? 'w1' : s < 12 ? 'w2' : s < 16 ? 'w3' : s < 20 ? 'w4' : s < 25 ? 'w5' : s < 30 ? 'w6' : 'w7';
+  const ICON = { wind: '💨', tide: '🌊', cam: '📷', spot: '📍', star: '★', board: '🏄', link: '🔗', clock: '🕑', map: '🗺️' };
 
-  function windowText(w) {
+  const section = (id, icon, title, sub, body, extraCls = '') => `<section class="panel ${extraCls}" id="${id}">
+      <header class="panel-head"><h2><span class="ico" aria-hidden="true">${icon}</span>${title}</h2>${sub ? `<p class="panel-sub">${sub}</p>` : ''}</header>
+      <div class="panel-body">${body}</div></section>`;
+
+  function windowText(w, showPeak = true) {
     if (!w) return '<span class="muted">none in forecast</span>';
     const same = dayKey(w.start) === dayKey(w.end - 1);
-    return `${dayName(w.start)} ${hhmm(w.start)}–${same ? '' : dayName(w.end) + ' '}${hhmm(w.end)} <span class="muted">(peak ${round(w.peak)} kn)</span>`;
+    return `<b>${dayName(w.start)}</b> ${hhmm(w.start)}–${same ? '' : dayName(w.end) + ' '}${hhmm(w.end)}${showPeak ? ` <span class="muted">· peak ${round(w.peak)} kn</span>` : ''}`;
   }
 
-  function tideLine(a) {
-    const s = a.spot;
-    if (!a.tide) return '<span class="muted">unavailable</span>';
-    const now = Date.now();
-    const next = a.tide.events.filter(e => e.t > now).slice(0, 2);
-    const ts = a.now.tide;
-    const ruleTxt = s.tide.rule === 'hw' ? `needs HW ±${s.tide.hours}h` : s.tide.rule === 'notLow' ? `avoid LW ±${s.tide.hours}h` : 'any tide';
-    const okTxt = s.tide.rule === 'none' ? '' : ts.ok ? '<span class="ok">in tide window</span>' : '<span class="bad">out of tide window</span>';
-    return `<span>${next.map(e => `${e.type} ${hhmm(e.t)}`).join(' · ')}</span> <span class="muted">(${ruleTxt})</span> ${okTxt}`;
+  const ruleText = s => s.tide.rule === 'hw' ? `HW ±${s.tide.hours}h only` : s.tide.rule === 'notLow' ? `avoid LW ±${s.tide.hours}h` : 'any tide';
+
+  function tideNow(a) {
+    if (!a.tide) return '<span class="muted">tide n/a</span>';
+    if (a.spot.tide.rule === 'none') return '<span class="muted">any tide</span>';
+    return a.now.tide.ok ? '<span class="pill ok-pill">tide ✓</span>' : '<span class="pill bad-pill">tide ✗</span>';
   }
 
-  function cardHTML(a) {
-    const n = a.now, s = a.spot;
-    return `<a class="card" href="#spot/${s.id}">
-      <div class="card-head">
-        <div><h3>${s.favourite ? '<span class="star" title="Favourite">★</span> ' : ''}${esc(s.name)}</h3><div class="muted small">${esc(s.area)}</div></div>
-        <div class="now-wind ${speedClass(n.w.speed)}">${arrow(n.w.dir)}<div><b>${round(n.w.speed)}</b><small> kn</small><div class="small">gust ${round(n.w.gust)}</div></div></div>
-      </div>
-      <div class="row small"><span class="chip q-${n.dq.q}">${n.w.dir == null ? '' : compass(n.w.dir) + ' · '}${esc(n.dq.cls)}</span>${n.w.spread >= 6 ? `<span class="chip q-caution" title="Models disagree by ${round(n.w.spread)} kn">models disagree</span>` : ''}</div>
-      <div class="row">${badge('Windsurf', n.windsurf)}${badge('Wing', n.wing)}</div>
-      <div class="small tide-line">${tideLine(a)}</div>
-      <div class="small"><b>Next windsurf:</b> ${windowText(a.windows.windsurf[0])}</div>
-      <div class="small"><b>Next wing:</b> ${windowText(a.windows.wing[0])}</div>
-    </a>`;
+  // tide windows (sailable periods) for tide-dependent spots, daylight only
+  function tideWindows(a) {
+    const out = []; let cur = null;
+    a.hours.forEach(h => {
+      const good = h.t + HOUR > Date.now() && h.tide.ok && h.day;
+      if (good) { if (!cur) cur = { start: h.t, end: h.t + HOUR }; else cur.end = h.t + HOUR; }
+      else if (cur) { out.push(cur); cur = null; }
+    });
+    if (cur) out.push(cur);
+    return out;
   }
 
-  function summaryHTML(all) {
-    const goNow = sport => all.filter(a => a.now[sport] === 'go').map(a => a.spot.name);
-    const best = sport => {
-      const w = all.flatMap(a => a.windows[sport].map(x => ({ ...x, spot: a.spot }))).sort((x, y) => x.start - y.start || y.peak - x.peak);
-      return w.slice(0, 4);
+  // ---------- pages ----------
+  function overviewPage(all) {
+    const best = sport => all.flatMap(a => a.windows[sport].map(x => ({ ...x, spot: a.spot })))
+      .sort((x, y) => x.start - y.start || y.peak - x.peak).slice(0, 5);
+    const onNow = sport => all.filter(a => a.now[sport] === 'go');
+    const bestCol = (sport, title) => {
+      const now = onNow(sport), next = best(sport);
+      return `<div class="bet">
+        <div class="bet-head"><h3>${title}</h3><span class="muted small">≥ ${settings[sport + 'Min']} kn · good direction · right tide</span></div>
+        <div class="bet-now ${now.length ? 'is-on' : ''}">${now.length ? `<b>On now:</b> ${now.map(a => `<a href="#spot/${a.spot.id}">${esc(a.spot.name)}</a>`).join(', ')}` : 'Nothing on right now'}</div>
+        <ol class="sessions">${next.map(w => `<li><a href="#spot/${w.spot.id}">${esc(w.spot.name)}</a><span>${windowText(w)}</span></li>`).join('') || '<li class="muted">No sessions in the forecast.</li>'}</ol>
+      </div>`;
     };
-    const list = (sport, label) => {
-      const now = goNow(sport), next = best(sport);
-      return `<div class="sum-col"><h3>${label} <span class="muted small">≥ ${settings[sport + 'Min']} kn, cross-shore</span></h3>
-        <p>${now.length ? `<span class="ok">On now:</span> ${now.map(esc).join(', ')}` : '<span class="muted">Nothing on right now.</span>'}</p>
-        <ul>${next.map(w => `<li><a href="#spot/${w.spot.id}">${esc(w.spot.name)}</a> – ${windowText(w)}</li>`).join('') || '<li class="muted">No sessions in the forecast. Pray to the wind gods.</li>'}</ul></div>`;
-    };
-    return `<section class="summary">${list('windsurf', 'Windsurf')}${list('wing', 'Wingfoil')}</section>`;
+    const order = { go: 0, maybe: 1, over: 2, tide: 3, no: 4, dark: 5, none: 6 };
+    const rows = all.slice().sort((x, y) => (Math.min(order[x.now.windsurf], order[x.now.wing]) - Math.min(order[y.now.windsurf], order[y.now.wing])) || ((y.spot.favourite ? 1 : 0) - (x.spot.favourite ? 1 : 0)));
+    const nowTable = `<div class="scroll-x"><table class="now-table">
+      <thead><tr><th>Spot</th><th>Wind</th><th class="c-gust">Gust</th><th>Direction</th><th>Tide</th><th>Windsurf</th><th>Wing</th></tr></thead>
+      <tbody>${rows.map(a => `<tr onclick="location.hash='#spot/${a.spot.id}'">
+        <td class="spot-cell"><a href="#spot/${a.spot.id}">${a.spot.favourite ? '<span class="star">★</span> ' : ''}${esc(a.spot.name)}</a><div class="muted tiny c-area">${esc(a.spot.area)}</div></td>
+        <td><span class="knots ${speedClass(a.now.w.speed)}">${round(a.now.w.speed)}</span></td>
+        <td class="muted c-gust">${round(a.now.w.gust)}</td>
+        <td class="nowrap">${arrow(a.now.w.dir, 16)} ${a.now.w.dir == null ? '' : compass(a.now.w.dir)} <span class="chip q-${a.now.dq.q}">${esc(a.now.dq.cls.replace(' dir', ''))}</span></td>
+        <td>${tideNow(a)}</td>
+        <td>${badge('', a.now.windsurf)}</td>
+        <td>${badge('', a.now.wing)}</td></tr>`).join('')}</tbody></table></div>`;
+    return section('best', ICON.board, 'Best bets', 'The next sessions where wind strength, direction and tide all line up (daylight only).',
+      `<div class="bets">${bestCol('windsurf', 'Windsurf')}${bestCol('wing', 'Wingfoil')}</div>`) +
+      section('now', ICON.clock, 'Right now', `Conditions this hour · ${hhmm(Date.now())}`, nowTable) +
+      quickNav();
+  }
+
+  function quickNav() {
+    return `<div class="quick">
+      <a href="#wind" class="quick-card"><span>${ICON.wind}</span><b>Wind forecast</b><small>All spots, next ${settings.days} days</small></a>
+      <a href="#tides" class="quick-card"><span>${ICON.tide}</span><b>Tides</b><small>HW/LW times & sailable windows</small></a>
+      <a href="#webcams" class="quick-card"><span>${ICON.cam}</span><b>Webcams</b><small>Check the water before you drive</small></a>
+      <a href="#spots" class="quick-card"><span>${ICON.spot}</span><b>Spot guide</b><small>Directions, hazards, notes</small></a>
+    </div>`;
+  }
+
+  function windPage(all) {
+    const SLOTS = [7, 10, 13, 16, 19];
+    const first = all[0];
+    const days = [...new Set(first.hours.map(h => dayKey(h.t)))];
+    const hourOf = t => +fmt(t, { hour: '2-digit', hourCycle: 'h23' });
+    const cols = [];
+    days.forEach(d => SLOTS.forEach(sl => {
+      const idx = first.hours.findIndex(h => dayKey(h.t) === d && hourOf(h.t) === sl);
+      if (idx >= 0 && first.hours[idx].t + HOUR > Date.now()) cols.push({ d, sl, idx });
+    }));
+    let prev = '';
+    const dayHead = [];
+    cols.forEach(c => { if (c.d !== prev) { dayHead.push({ d: c.d, n: 1, t: first.hours[c.idx].t }); prev = c.d; } else dayHead[dayHead.length - 1].n++; });
+    const isNew = (i) => i === 0 || cols[i].d !== cols[i - 1].d;
+    const table = `<div class="scroll-x"><table class="matrix">
+      <thead>
+        <tr><th class="sticky"></th>${dayHead.map(d => `<th colspan="${d.n}" class="newday dayh">${dayName(d.t)}</th>`).join('')}</tr>
+        <tr><th class="sticky">Spot</th>${cols.map((c, i) => `<th class="${isNew(i) ? 'newday' : ''} tiny">${String(c.sl).padStart(2, '0')}</th>`).join('')}</tr>
+      </thead>
+      <tbody>${all.map(a => `<tr>
+        <th class="sticky spot-cell"><a href="#spot/${a.spot.id}">${a.spot.favourite ? '<span class="star">★</span> ' : ''}${esc(a.spot.name)}</a></th>
+        ${cols.map((c, i) => {
+          const h = a.hours[c.idx]; if (!h) return '<td></td>';
+          const ws = h.windsurf === 'go', wg = h.wing === 'go';
+          return `<td class="${speedClass(h.w.speed)} ${isNew(i) ? 'newday' : ''} ${h.dq.q === 'bad' ? 'baddir' : ''}" title="${esc(a.spot.name)} ${dayName(h.t)} ${hhmm(h.t)}: ${round(h.w.speed)} kn (gust ${round(h.w.gust)}) ${h.w.dir == null ? '' : compass(h.w.dir)} – ${h.dq.cls}">
+            <div class="mx-speed">${round(h.w.speed)}</div>${arrow(h.w.dir, 13)}
+            <div class="mx-dots">${ws ? '<i class="dot dot-ws" title="Windsurf GO"></i>' : ''}${wg ? '<i class="dot dot-wing" title="Wing GO"></i>' : ''}</div></td>`;
+        }).join('')}</tr>`).join('')}</tbody></table></div>`;
+    const legend = `<div class="legend-row small">
+      <span class="scale">${[['w1', '<8'], ['w2', '8–12'], ['w3', '12–16'], ['w4', '16–20'], ['w5', '20–25'], ['w6', '25–30'], ['w7', '30+']].map(([c, l]) => `<span class="${c}">${l}</span>`).join('')}</span>
+      <span><i class="dot dot-ws"></i> Windsurf GO</span><span><i class="dot dot-wing"></i> Wing GO</span><span><span class="baddir-key"></span> offshore / wrong direction</span></div>`;
+    const models = `<ul class="model-list">${settings.models.map(id => { const m = MODELS.find(x => x.id === id); return `<li><b>${esc(m.short)}</b> ${esc(m.label)}</li>`; }).join('')}</ul>`;
+    return section('wind', ICON.wind, 'Wind forecast', `Average of ${settings.models.length} models, in knots. Tap a spot for the hourly breakdown by model.`, legend + table) +
+      section('models', ICON.map, 'Forecast models used', 'Change these in Settings. UKV and AROME are high-res short-range models; ECMWF and GFS go further out.', models);
+  }
+
+  function tideChartSVG(tide, start, end, opts = {}) {
+    if (!tide) return '<p class="muted">Tide data unavailable.</p>';
+    const pts = [];
+    for (let t = start; t <= end; t += HOUR / 3) { const h = tide.heightAt(t); if (h != null) pts.push([t, h]); }
+    if (pts.length < 2) return '<p class="muted">Tide data unavailable.</p>';
+    const hrs = (end - start) / HOUR;
+    const W = Math.max(640, hrs * (opts.pxPerHour || 9)), H = 150, P = 18, TOP = 34;
+    const hs = pts.map(p => p[1]), hmin = Math.min(...hs), hmax = Math.max(...hs);
+    const x = t => P + (t - start) / (end - start) * (W - 2 * P);
+    const y = h => H - P - (h - hmin) / ((hmax - hmin) || 1) * (H - P - TOP);
+    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+    const area = path + `L${x(pts[pts.length - 1][0]).toFixed(1)},${H}L${x(pts[0][0]).toFixed(1)},${H}Z`;
+    let bands = '';
+    const step = HOUR, bw = (W - 2 * P) * step / (end - start) + 0.5;
+    for (let t = start; t < end; t += step) {
+      if (opts.lat != null && !isDaylight(t + step / 2, opts.lat, opts.lon)) bands += `<rect class="night" x="${x(t)}" y="0" width="${bw}" height="${H}"/>`;
+      else if (opts.okAt && opts.okAt(t + step / 2)) bands += `<rect class="tide-ok" x="${x(t)}" y="0" width="${bw}" height="${H}"/>`;
+    }
+    const evs = tide.events.filter(e => e.t >= start && e.t <= end).map(e => {
+      const ex = x(e.t), ey = y(tide.heightAt(e.t) ?? e.h);
+      return `<circle cx="${ex}" cy="${ey}" r="3" class="tide-pt"/><text x="${ex}" y="${e.type === 'HW' ? ey - 8 : ey + 14}" text-anchor="middle" class="tide-lbl">${e.type} ${hhmm(e.t)}</text>`;
+    }).join('');
+    const nowX = x(Date.now());
+    let days = '';
+    for (let t = start; t <= end; t += HOUR) {
+      if (+fmt(t, { hour: '2-digit', hourCycle: 'h23' }) === 0) days += `<line x1="${x(t)}" x2="${x(t)}" y1="0" y2="${H}" class="day-line"/><text x="${x(t) + 4}" y="12" class="day-lbl">${dayName(t)}</text>`;
+    }
+    return `<div class="scroll-x chart-wrap"><svg class="tide-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${bands}<path d="${area}" class="tide-area"/><path d="${path}" class="tide-path"/>${days}${evs}${Date.now() >= start && Date.now() <= end ? `<line x1="${nowX}" x2="${nowX}" y1="0" y2="${H}" class="now-line"/>` : ''}</svg></div>`;
+  }
+
+  function tideTimesTable(tide, from, to) {
+    if (!tide) return '<p class="muted">Tide data unavailable.</p>';
+    const byDay = new Map();
+    tide.events.filter(e => e.t >= from && e.t <= to).forEach(e => {
+      const k = dayKey(e.t); if (!byDay.has(k)) byDay.set(k, { t: e.t, ev: [] }); byDay.get(k).ev.push(e);
+    });
+    return `<div class="tide-days">${[...byDay.values()].map(d => `<div class="tide-day"><div class="td-name">${dayName(d.t)}</div>
+      ${d.ev.map(e => `<div class="td-ev ${e.type === 'HW' ? 'hw' : 'lw'}"><span>${e.type === 'HW' ? 'High' : 'Low'}</span><b>${hhmm(e.t)}</b><small>${e.h != null ? e.h.toFixed(1) + ' m' : ''}</small></div>`).join('')}</div>`).join('')}</div>`;
+  }
+
+  function tidesPage(all) {
+    const start = new Date(); start.setMinutes(0, 0, 0);
+    const from = start.getTime() - 3 * HOUR, to = from + settings.days * 24 * HOUR;
+    const dependent = all.filter(a => a.spot.tide.rule !== 'none');
+    const windowsCard = dependent.map(a => {
+      const tw = tideWindows(a).slice(0, 6);
+      return `<div class="tw-card"><div class="tw-head"><a href="#spot/${a.spot.id}">${a.spot.favourite ? '<span class="star">★</span> ' : ''}${esc(a.spot.name)}</a><span class="pill">${ruleText(a.spot)}</span></div>
+        <ul>${tw.map(w => `<li>${windowText(w, false)}</li>`).join('') || '<li class="muted">No daylight tide windows</li>'}</ul></div>`;
+    }).join('');
+    // one block per tide area (shared reference point)
+    const groups = new Map();
+    all.forEach(a => { const k = a.spot.tide.ref.join(','); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); });
+    const areas = [...groups.entries()].map(([k, g]) => {
+      const a = g.find(x => !x.spot.tide.offsetMin) || g[0];
+      const offs = g.filter(x => x.spot.tide.offsetMin).map(x => `${esc(x.spot.name)} +${x.spot.tide.offsetMin} min`);
+      return `<div class="tide-area-block"><h3>${esc((window.TIDE_AREAS || {})[k] || a.spot.name)}</h3>
+        <p class="muted small tide-covers">For: ${g.map(x => `<a href="#spot/${x.spot.id}">${esc(x.spot.name)}</a>`).join(', ')}${offs.length ? ` · times shown for ${esc(a.spot.name)}; ${offs.join(', ')}` : ''}</p>
+        ${tideTimesTable(a.tide, from, to)}
+        ${tideChartSVG(a.tide, from, to, { lat: a.spot.lat, lon: a.spot.lon })}
+        <p class="muted tiny">${a.tide ? esc(a.tide.source) : ''}</p></div>`;
+    }).join('');
+    return section('tide-windows', ICON.clock, 'Sailable tide windows', 'Daylight periods when the tide is right at spots that depend on it. Wind not included – see Best bets for that.', `<div class="tw-grid">${windowsCard}</div>`) +
+      section('tide-times', ICON.tide, 'Tide times', `High and low water for each area. ${settings.admiraltyKey ? 'Official UKHO Admiralty times.' : 'From the Open-Meteo tide model (approximate) – add a free Admiralty key in Settings for official times.'} Not for navigation.`, areas);
+  }
+
+  function webcamsPage(all) {
+    const cards = all.map(a => `<div class="cam-card"><div class="cam-head"><a href="#spot/${a.spot.id}">${a.spot.favourite ? '<span class="star">★</span> ' : ''}${esc(a.spot.name)}</a>
+        <span class="knots ${speedClass(a.now.w.speed)}">${round(a.now.w.speed)} kn</span></div>
+      <ul>${(a.spot.webcams || []).map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${ICON.cam} ${esc(l.label)}</a></li>`).join('') || '<li class="muted">None known</li>'}</ul></div>`).join('');
+    return section('webcams', ICON.cam, 'Webcams', 'Third-party cameras – they open in a new tab and some may be offline.', `<div class="cam-grid">${cards}</div>`) +
+      section('more', ICON.link, 'More live data', '', `<ul class="link-list">${window.GENERAL_LINKS.map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></li>`).join('')}</ul>`);
+  }
+
+  function spotsPage(all) {
+    const cards = all.map(a => {
+      const s = a.spot, n = a.now;
+      return `<a class="card" href="#spot/${s.id}">
+        <div class="card-head"><div><h3>${s.favourite ? '<span class="star">★</span> ' : ''}${esc(s.name)}</h3><div class="muted small">${esc(s.area)}</div></div>
+          <div class="now-wind ${speedClass(n.w.speed)}">${arrow(n.w.dir)}<div><b>${round(n.w.speed)}</b><small> kn</small></div></div></div>
+        <p class="small">${esc(s.dirNote)}</p>
+        <div class="row small"><span class="pill">${ICON.tide} ${ruleText(s)}</span></div>
+      </a>`;
+    }).join('');
+    return section('spots', ICON.spot, 'Spot guide', `${all.length} spots. ★ = your regulars.`, `<div class="cards">${cards}</div>`);
   }
 
   function compassSVG(spot, dir) {
@@ -385,43 +531,10 @@
     const [sx, sy] = pt(spot.seaward, R - 8);
     const sea = spot.goodDirs ? '' : `<line class="sea" x1="${C}" y1="${C}" x2="${sx}" y2="${sy}"/><text class="sea-t" x="${pt(spot.seaward, R - 24)[0]}" y="${pt(spot.seaward, R - 24)[1]}" text-anchor="middle">sea</text>`;
     let wind = '';
-    if (dir != null) {
-      const [x1, y1] = pt(dir, R), [x2, y2] = pt(dir, 14);
-      wind = `<line class="wind" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#ah)"/>`;
-    }
+    if (dir != null) { const [x1, y1] = pt(dir, R), [x2, y2] = pt(dir, 14); wind = `<line class="wind" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" marker-end="url(#ah)"/>`; }
     return `<svg class="compass" viewBox="-6 -6 172 172" role="img" aria-label="Good wind directions for ${esc(spot.name)}">
       <defs><marker id="ah" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="wind-head"/></marker></defs>
       <circle cx="${C}" cy="${C}" r="${R}" class="ring"/>${sectors}${sea}${wind}${labels}</svg>`;
-  }
-
-  function tideChartSVG(a) {
-    const tide = a.tide; if (!tide) return '<p class="muted">Tide data unavailable.</p>';
-    const start = a.hours[0].t, end = a.hours[a.hours.length - 1].t;
-    const pts = [];
-    for (let t = start; t <= end; t += HOUR / 2) { const h = tide.heightAt(t); if (h != null) pts.push([t, h]); }
-    if (pts.length < 2) return '<p class="muted">Tide data unavailable.</p>';
-    const W = Math.max(600, a.hours.length * 10), H = 150, P = 18, TOP = 34;
-    const hs = pts.map(p => p[1]), hmin = Math.min(...hs), hmax = Math.max(...hs);
-    const x = t => P + (t - start) / (end - start) * (W - 2 * P);
-    const y = h => H - P - (h - hmin) / ((hmax - hmin) || 1) * (H - P - TOP);
-    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
-    // tide windows shading
-    let shade = '';
-    if (a.spot.tide.rule !== 'none') {
-      a.hours.forEach(h => { if (h.tide.ok) shade += `<rect class="tide-ok" x="${x(h.t)}" y="0" width="${(W - 2 * P) / (a.hours.length - 1) + 0.5}" height="${H}"/>`; });
-    }
-    // nights
-    let night = '';
-    a.hours.forEach(h => { if (!h.day) night += `<rect class="night" x="${x(h.t)}" y="0" width="${(W - 2 * P) / (a.hours.length - 1) + 0.5}" height="${H}"/>`; });
-    const evs = tide.events.filter(e => e.t >= start && e.t <= end).map(e => {
-      const ex = x(e.t), ey = y(tide.heightAt(e.t) ?? e.h);
-      return `<circle cx="${ex}" cy="${ey}" r="3" class="tide-pt"/><text x="${ex}" y="${e.type === 'HW' ? ey - 7 : ey + 14}" text-anchor="middle" class="tide-lbl">${e.type} ${hhmm(e.t)}</text>`;
-    }).join('');
-    const nowX = x(Date.now());
-    const days = [...new Set(a.hours.map(h => dayKey(h.t)))].map(k => a.hours.find(h => dayKey(h.t) === k)).map(h =>
-      `<line x1="${x(h.t)}" x2="${x(h.t)}" y1="0" y2="${H}" class="day-line"/><text x="${x(h.t) + 3}" y="11" class="day-lbl">${dayName(h.t)}</text>`).join('');
-    return `<div class="scroll-x"><svg class="tide-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${night}${shade}<path d="${path}" class="tide-path"/>${evs}<line x1="${nowX}" x2="${nowX}" y1="0" y2="${H}" class="now-line"/>${days}</svg></div>
-      <p class="muted small">Source: ${esc(tide.source)}. ${a.spot.tide.rule !== 'none' ? 'Green shading = sailable tide window. ' : ''}Grey = night. Not for navigation.</p>`;
   }
 
   function hourlyTableHTML(a) {
@@ -440,78 +553,76 @@
     return `<div class="scroll-x"><table class="hourly">
       <thead><tr><th class="rlabel"></th>${head}</tr></thead>
       <tbody>
-        ${row('<b>Average</b>', (h, c) => `<td class="${speedClass(h.w.speed)}${c} strong">${round(h.w.speed)}</td>`)}
+        ${row('<b>Wind</b>', (h, c) => `<td class="${speedClass(h.w.speed)}${c} strong">${round(h.w.speed)}</td>`)}
         ${row('Gust', (h, c) => `<td class="${speedClass(h.w.gust)}${c}">${round(h.w.gust)}</td>`)}
         ${row('Dir', (h, c) => `<td class="${c.trim()}" title="${h.w.dir == null ? '' : compass(h.w.dir) + ' ' + Math.round(h.w.dir) + '°'}">${arrow(h.w.dir, 16)}<div class="tiny">${h.w.dir == null ? '' : compass(h.w.dir)}</div></td>`)}
-        ${row('Shore', (h, c) => `<td class="q-${h.dq.q}${c} tiny">${esc(h.dq.cls.replace(' dir', ''))}</td>`)}
-        ${row('Tide', (h, c) => `<td class="${a.spot.tide.rule !== 'none' ? (h.tide.ok ? 'tide-in' : 'tide-out') : ''}${c} tiny">${h.tide.height == null ? '' : h.tide.height.toFixed(1) + 'm'}${h.tide.rising == null ? '' : h.tide.rising ? '↑' : '↓'}</td>`)}
+        ${row('Shore', (h, c) => `<td class="q-${h.dq.q}${c} tiny">${esc(h.dq.cls.replace(' dir', '').replace('-shore', ''))}</td>`)}
+        ${row('Tide', (h, c) => `<td class="${a.spot.tide.rule !== 'none' ? (h.tide.ok ? 'tide-in' : 'tide-out') : ''}${c} tiny">${h.tide.height == null ? '' : h.tide.height.toFixed(1)}${h.tide.rising == null ? '' : h.tide.rising ? '↑' : '↓'}</td>`)}
         ${row('Windsurf', (h, c) => `<td class="${STATUS[h.windsurf].cls}${c} tiny">${STATUS[h.windsurf].txt}</td>`, 'verdict')}
         ${row('Wing', (h, c) => `<td class="${STATUS[h.wing].cls}${c} tiny">${STATUS[h.wing].txt}</td>`, 'verdict')}
+        <tr class="subhead"><th class="rlabel" colspan="${hrs.length + 1}">By model</th></tr>
         ${modelRows}
       </tbody></table></div>`;
   }
 
-  function linksHTML(s) {
+  function spotPage(a) {
+    const s = a.spot, n = a.now;
+    const start = new Date(); start.setMinutes(0, 0, 0);
+    const from = start.getTime() - 3 * HOUR, to = from + settings.days * 24 * HOUR;
     const mo = `https://weather.metoffice.gov.uk/forecast/${geohash(s.lat, s.lon)}`;
-    const windy = `https://www.windy.com/${s.lat}/${s.lon}?${s.lat},${s.lon},12`;
+    const windyLink = `https://www.windy.com/${s.lat}/${s.lon}?${s.lat},${s.lon},12`;
+    const windyEmbed = `https://embed.windy.com/embed2.html?lat=${s.lat}&lon=${s.lon}&detailLat=${s.lat}&detailLon=${s.lon}&zoom=10&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=kt&metricTemp=%C2%B0C&radarRange=-1`;
+    const li = l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></li>`;
     const forecasts = [
-      { label: 'Windy', url: windy },
-      { label: 'Met Office', url: mo },
+      { label: 'Windy', url: windyLink }, { label: 'Met Office', url: mo },
       s.windfinder && { label: 'Windfinder', url: `https://www.windfinder.com/forecast/${s.windfinder}` },
       { label: 'Windguru', url: 'https://www.windguru.cz/' },
       { label: 'Admiralty EasyTide', url: 'https://easytide.admiralty.co.uk/' },
-      { label: 'Google Maps', url: `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lon}` },
+      { label: 'Directions (Google Maps)', url: `https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lon}` },
     ].filter(Boolean);
-    const li = l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></li>`;
-    return `<div class="links-grid">
-      <div><h4>Forecasts &amp; maps</h4><ul>${forecasts.map(li).join('')}</ul></div>
-      <div><h4>Webcams</h4><ul>${(s.webcams || []).map(li).join('') || '<li class="muted">None known</li>'}</ul></div>
-      <div><h4>Info</h4><ul>${(s.links || []).map(li).join('') || '<li class="muted">–</li>'}</ul></div>
-    </div>`;
-  }
+    const wl = sport => a.windows[sport].slice(0, 5).map(w => `<li><span>${windowText(w)}</span></li>`).join('') || '<li class="muted">None in forecast</li>';
 
-  function detailHTML(a) {
-    const s = a.spot, n = a.now;
-    const windy = `https://embed.windy.com/embed2.html?lat=${s.lat}&lon=${s.lon}&detailLat=${s.lat}&detailLon=${s.lon}&zoom=10&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=kt&metricTemp=%C2%B0C&radarRange=-1`;
-    const wl = (sport) => a.windows[sport].slice(0, 6).map(w => `<li>${windowText(w)}</li>`).join('') || '<li class="muted">None in forecast</li>';
-    return `<a href="#" class="back">← All spots</a>
-      <header class="detail-head">
-        <div>
-          <h2>${s.favourite ? '<span class="star">★</span> ' : ''}${esc(s.name)}</h2>
+    const hero = `<div class="hero">
+        <div class="hero-main">
+          <a href="#spots" class="back">← All spots</a>
+          <h1>${s.favourite ? '<span class="star">★</span> ' : ''}${esc(s.name)}</h1>
           <div class="muted">${esc(s.area)}</div>
-          <p>${esc(s.notes)}</p>
-          <p class="small"><b>Wind:</b> ${esc(s.dirNote)}</p>
-          <p class="small"><b>Tide:</b> ${tideLine(a)}</p>
+          <div class="hero-stats">
+            <div class="stat ${speedClass(n.w.speed)}"><span class="stat-l">Wind</span><span class="stat-v">${arrow(n.w.dir, 24)} ${round(n.w.speed)}<small> kn</small></span><span class="stat-s">${n.w.dir == null ? '' : compass(n.w.dir)} · gust ${round(n.w.gust)}</span></div>
+            <div class="stat"><span class="stat-l">Direction</span><span class="stat-v small-v"><span class="chip q-${n.dq.q}">${esc(n.dq.cls)}</span></span><span class="stat-s">${esc(s.dirNote.split('.')[0])}</span></div>
+            <div class="stat"><span class="stat-l">Tide</span><span class="stat-v small-v">${tideNow(a)}</span><span class="stat-s">${n.tide.label || ''} · ${ruleText(s)}</span></div>
+            <div class="stat"><span class="stat-l">Verdict now</span><span class="stat-v small-v">${badge('Windsurf', n.windsurf)} ${badge('Wing', n.wing)}</span></div>
+          </div>
         </div>
-        <div class="detail-now">
-          ${compassSVG(s, n.w.dir)}
-          <div class="now-wind big ${speedClass(n.w.speed)}">${arrow(n.w.dir, 30)}<div><b>${round(n.w.speed)}</b><small> kn</small><div class="small">gust ${round(n.w.gust)} · ${n.w.dir == null ? '' : compass(n.w.dir)}</div></div></div>
-          <div class="row">${badge('Windsurf', n.windsurf)}${badge('Wing', n.wing)}</div>
-          <div class="legend small"><span class="sw sec-good"></span>cross/good <span class="sw sec-ok"></span>onshore <span class="sw sec-caution"></span>cross-off <span class="sw sec-bad"></span>offshore</div>
-        </div>
-      </header>
-      <section class="windows">
-        <div><h3>Windsurf sessions <span class="muted small">≥ ${settings.windsurfMin} kn</span></h3><ul>${wl('windsurf')}</ul></div>
-        <div><h3>Wing sessions <span class="muted small">≥ ${settings.wingMin} kn</span></h3><ul>${wl('wing')}</ul></div>
-      </section>
-      <h3>Hourly forecast <span class="muted small">knots · average of ${settings.models.length} models</span></h3>
-      ${hourlyTableHTML(a)}
-      <h3>Tide</h3>
-      ${tideChartSVG(a)}
-      <h3>Links &amp; webcams</h3>
-      ${linksHTML(s)}
-      <h3>Live wind map</h3>
-      <div class="windy"><iframe title="Windy wind map for ${esc(s.name)}" loading="lazy" src="${windy}" frameborder="0"></iframe></div>`;
+        <div class="hero-compass">${compassSVG(s, n.w.dir)}
+          <div class="legend small"><span class="sw sec-good"></span>good <span class="sw sec-ok"></span>onshore <span class="sw sec-caution"></span>cross-off <span class="sw sec-bad"></span>offshore</div></div>
+      </div>`;
+
+    return hero +
+      section('sessions', ICON.board, 'Sessions', 'When wind, direction and tide all line up (daylight).',
+        `<div class="bets"><div class="bet"><div class="bet-head"><h3>Windsurf</h3><span class="muted small">≥ ${settings.windsurfMin} kn</span></div><ul class="sessions">${wl('windsurf')}</ul></div>
+         <div class="bet"><div class="bet-head"><h3>Wingfoil</h3><span class="muted small">≥ ${settings.wingMin} kn</span></div><ul class="sessions">${wl('wing')}</ul></div></div>`) +
+      section('forecast', ICON.wind, 'Wind forecast', `Hourly, in knots. Top rows are the ${settings.models.length}-model average; individual models below.`, hourlyTableHTML(a)) +
+      section('tide', ICON.tide, 'Tide', `${ruleText(s)}. ${s.tide.rule !== 'none' ? 'Green shading = sailable tide window; grey = night.' : 'Grey = night.'}`,
+        tideTimesTable(a.tide, Date.now() - 3 * HOUR, to) +
+        tideChartSVG(a.tide, from, to, { lat: s.lat, lon: s.lon, okAt: s.tide.rule === 'none' ? null : t => tideState(s, a.tide, t).ok }) +
+        `<p class="muted tiny">${a.tide ? esc(a.tide.source) : ''} · Not for navigation.</p>`) +
+      section('cams', ICON.cam, 'Webcams', 'Third-party – may be offline.', `<ul class="link-list">${(s.webcams || []).map(li).join('') || '<li class="muted">None known</li>'}</ul>`) +
+      section('about', ICON.spot, 'Spot notes', '', `<p>${esc(s.notes)}</p><p><b>Wind:</b> ${esc(s.dirNote)}</p>${(s.links || []).length ? `<ul class="link-list">${s.links.map(li).join('')}</ul>` : ''}`) +
+      section('links', ICON.link, 'Other forecasts', '', `<ul class="link-list">${forecasts.map(li).join('')}</ul>`) +
+      section('map', ICON.map, 'Live wind map', '', `<div class="windy"><iframe title="Windy wind map for ${esc(s.name)}" loading="lazy" src="${windyEmbed}" frameborder="0"></iframe></div>`);
   }
 
-  function settingsHTML() {
-    return `<form id="settings-form">
+  function settingsPage() {
+    return section('settings', '⚙︎', 'Settings', 'Saved on this device.', `<form id="settings-form">
+      <div class="form-grid">
       <fieldset><legend>Windsurf (knots)</legend>
         <label>Minimum <input type="number" name="windsurfMin" min="0" max="60" value="${settings.windsurfMin}"></label>
         <label>Too much above <input type="number" name="windsurfMax" min="0" max="80" value="${settings.windsurfMax}"></label></fieldset>
       <fieldset><legend>Wingfoil (knots)</legend>
         <label>Minimum <input type="number" name="wingMin" min="0" max="60" value="${settings.wingMin}"></label>
         <label>Too much above <input type="number" name="wingMax" min="0" max="80" value="${settings.wingMax}"></label></fieldset>
+      </div>
       <fieldset><legend>Forecast models</legend>
         ${MODELS.map(m => `<label class="cb"><input type="checkbox" name="model" value="${m.id}" ${settings.models.includes(m.id) ? 'checked' : ''}> ${esc(m.label)}</label>`).join('')}
       </fieldset>
@@ -522,7 +633,7 @@
           <input type="text" name="admiraltyKey" autocomplete="off" spellcheck="false" value="${esc(settings.admiraltyKey)}"></label>
       </fieldset>
       <div class="row"><button type="submit" class="btn">Save &amp; refresh</button><button type="button" class="btn ghost" id="reset">Reset defaults</button></div>
-    </form>`;
+    </form>`);
   }
 
   // ---------- app ----------
@@ -530,7 +641,8 @@
 
   async function load() {
     const main = $('#main');
-    main.innerHTML = '<p class="loading">Fetching forecasts…</p>';
+    if (!analysed) main.innerHTML = '<p class="loading">Fetching forecasts…</p>';
+    $('#refresh').classList.add('spin');
     const spots = window.SPOTS;
     const refs = tideRefs(spots);
     const windP = fetchWind(spots);
@@ -549,32 +661,29 @@
       lastUpdated = Date.now();
       render();
     } catch (err) {
-      main.innerHTML = `<div class="error"><p>Couldn't load the forecast: ${esc(err.message)}</p><button class="btn" id="retry">Try again</button></div>`;
+      main.innerHTML = `<div class="error panel"><p>Couldn't load the forecast: ${esc(err.message)}</p><button class="btn" id="retry">Try again</button></div>`;
       $('#retry').onclick = load;
-    }
+    } finally { $('#refresh').classList.remove('spin'); }
   }
 
   function render() {
     const main = $('#main');
-    const m = location.hash.match(/^#spot\/(.+)$/);
+    const hash = location.hash || '#';
+    const m = hash.match(/^#spot\/(.+)$/);
+    const tab = m ? 'spots' : (hash.slice(1) || 'overview');
+    document.querySelectorAll('.tabs a').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
     $('#updated').textContent = lastUpdated ? `Updated ${hhmm(lastUpdated)}` : '';
-    if (location.hash === '#settings') {
-      main.innerHTML = `<a href="#" class="back">← All spots</a><h2>Settings</h2>${settingsHTML()}`;
-      bindSettings();
-      return;
-    }
+    if (hash === '#settings') { main.innerHTML = settingsPage(); bindSettings(); return; }
     if (!analysed) return;
     const note = tideNote ? `<p class="warn small">${esc(tideNote)}</p>` : '';
-    if (m) {
-      const a = analysed.find(x => x.spot.id === m[1]);
-      if (a) { main.innerHTML = note + detailHTML(a); window.scrollTo(0, 0); return; }
-    }
-    const order = { go: 0, maybe: 1, over: 2, tide: 3, no: 4, dark: 5, none: 6 };
-    const score = a => Math.min(order[a.now.windsurf], order[a.now.wing]) * 10 - (a.spot.favourite ? 5 : 0);
-    const sorted = analysed.slice().sort((x, y) => score(x) - score(y));
-    main.innerHTML = note + summaryHTML(analysed) + `<section class="cards">${sorted.map(cardHTML).join('')}</section>
-      <section class="general"><h3>Other useful links</h3><ul class="inline">${window.GENERAL_LINKS.map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></li>`).join('')}</ul>
-      <p class="muted small">Wind: Open-Meteo multi-model average (${settings.models.map(id => MODELS.find(x => x.id === id).short).join(', ')}). Tides: ${settings.admiraltyKey ? 'UKHO Admiralty' : 'Open-Meteo tide model – add a free Admiralty API key in Settings for official times'}. Always check conditions yourself – not for navigation.</p></section>`;
+    let html;
+    if (m) { const a = analysed.find(x => x.spot.id === m[1]); html = a ? spotPage(a) : spotsPage(analysed); }
+    else if (tab === 'wind') html = windPage(analysed);
+    else if (tab === 'tides') html = tidesPage(analysed);
+    else if (tab === 'webcams') html = webcamsPage(analysed);
+    else if (tab === 'spots') html = spotsPage(analysed);
+    else html = overviewPage(analysed);
+    main.innerHTML = note + html;
   }
 
   function bindSettings() {
@@ -599,7 +708,7 @@
     $('#reset').onclick = () => { settings = Object.assign({}, DEFAULTS, { models: DEFAULTS.models.slice() }); store.set('sdw.settings', settings); render(); };
   }
 
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   document.addEventListener('DOMContentLoaded', () => {
     $('#refresh').onclick = load;
     load();

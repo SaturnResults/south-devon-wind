@@ -8,16 +8,27 @@
   <meta name="theme-color" content="#0b5f7a">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌬️</text></svg>">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <a href="#" class="brand"><span aria-hidden="true">🌬️</span> South Devon Wind</a>
-    <div class="top-actions">
-      <span id="updated" class="muted small"></span>
-      <button id="refresh" class="btn ghost" title="Refresh forecasts">↻</button>
-      <a href="#settings" class="btn ghost" title="Settings">⚙︎</a>
+    <div class="topbar-inner">
+      <a href="#" class="brand"><span class="logo" aria-hidden="true">🌬️</span><span>South Devon Wind<small>windsurf · wingfoil</small></span></a>
+      <div class="top-actions">
+        <span id="updated" class="updated"></span>
+        <button id="refresh" class="icon-btn" title="Refresh forecasts" aria-label="Refresh">↻</button>
+        <a href="#settings" class="icon-btn" title="Settings" aria-label="Settings">⚙︎</a>
+      </div>
     </div>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#" data-tab="overview">Overview</a>
+      <a href="#wind" data-tab="wind">💨 Wind</a>
+      <a href="#tides" data-tab="tides">🌊 Tides</a>
+      <a href="#webcams" data-tab="webcams">📷 Webcams</a>
+      <a href="#spots" data-tab="spots">📍 Spots</a>
+    </nav>
   </header>
   <main id="main"></main>
   <footer class="foot muted small">

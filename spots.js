@@ -40,7 +40,7 @@ window.SPOTS = [
     lat: 50.4482, lon: -3.5548,
     seaward: 95,
     dirNote: 'East-facing. N/NE and S/SE are cross-shore; SW–W is offshore (gusty and dangerous).',
-    tide: { rule: 'none', ref: [50.45, -3.53], offsetMin: 0 },
+    tide: { rule: 'none', ref: [50.44, -3.53], offsetMin: 0 },
     notes: 'Sailable at all states of tide. Watch the swim zones in summer. Can get choppy in strong E/SE winds.',
     windfinder: 'paignton',
     webcams: [
@@ -59,7 +59,7 @@ window.SPOTS = [
     lat: 50.4075, lon: -3.5565,
     seaward: 90,
     dirNote: 'East-facing. N and S/SE are cross-shore.',
-    tide: { rule: 'none', ref: [50.41, -3.53], offsetMin: 0 },
+    tide: { rule: 'none', ref: [50.44, -3.53], offsetMin: 0 },
     notes: 'Shallow sandy bay, sailable at most tides. Quieter alternative to Paignton.',
     windfinder: 'paignton',
     webcams: [{ label: 'Windfinder webcams – Paignton', url: 'https://www.windfinder.com/webcams/paignton' }],
@@ -72,7 +72,7 @@ window.SPOTS = [
     lat: 50.4600, lon: -3.5370,
     seaward: 155,
     dirNote: 'SSE-facing. E/NE and SW/W are cross-shore. N is offshore.',
-    tide: { rule: 'notLow', hours: 1.5, ref: [50.455, -3.52], offsetMin: 0 },
+    tide: { rule: 'notLow', hours: 1.5, ref: [50.44, -3.53], offsetMin: 0 },
     notes: 'Beach almost disappears at high water on springs; low tide leaves a long walk. Mid-tide is easiest.',
     windfinder: 'torquay',
     webcams: [{ label: 'Windfinder webcams – Torquay', url: 'https://www.windfinder.com/webcams/torquay' }],
@@ -204,6 +204,16 @@ window.SPOTS = [
     links: [],
   },
 ];
+
+// Display names for the tide reference points used above (key = "lat,lon").
+window.TIDE_AREAS = {
+  '50.535,-3.47': 'Teign (Teignmouth)',
+  '50.44,-3.53': 'Torbay',
+  '50.59,-3.42': 'Exe (Exmouth / Dawlish Warren)',
+  '50.27,-3.62': 'Start Bay',
+  '50.27,-3.91': 'Bigbury Bay / Avon',
+  '50.34,-4.15': 'Plymouth Sound',
+};
 
 window.GENERAL_LINKS = [
   { label: 'Visit Devon webcam map', url: 'https://www.visitdevon.co.uk/explore/webcams-in-devon/' },
